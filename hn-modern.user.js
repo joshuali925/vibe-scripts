@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HN Modern
 // @namespace    video-keys
-// @version      1.0.1
+// @version      1.1.0
 // @description  Readable, modern restyle of Hacker News story lists and discussions, light and dark
 // @match        https://news.ycombinator.com/*
 // @run-at       document-start
@@ -13,6 +13,7 @@
 
 ;(() => {
   const INDENT_LEVELS = 64
+  const REPLY_DEPTH = 2
 
   const indentRules = Array.from(
     { length: INDENT_LEVELS },
@@ -30,11 +31,11 @@
   --hnm-on-accent: #ffffff;
   --hnm-step: 24px;
   --hnm-lane: 14px;
-  --hnm-fs-title: 16px;
-  --hnm-fs-body: 15px;
-  --hnm-fs-meta: 13px;
-  --hnm-fs-nav: 14px;
-  --hnm-fs-head: 24px;
+  --hnm-fs-title: 17px;
+  --hnm-fs-body: 16px;
+  --hnm-fs-meta: 14px;
+  --hnm-fs-nav: 15px;
+  --hnm-fs-head: 26px;
   --hnm-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --hnm-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color-scheme: light dark;
@@ -54,7 +55,7 @@
   @media (max-width: 640px) {
     --hnm-step: 18px;
     --hnm-lane: 12px;
-    --hnm-fs-head: 20px;
+    --hnm-fs-head: 22px;
   }
 
   body {
@@ -291,7 +292,39 @@
     transition: background-color 120ms ease;
   }
   .hnm-gutter:hover::before { background: var(--hnm-accent); }
-  tr.coll .hnm-gutter { display: none; }
+  tr.coll .hnm-gutter {
+    top: 7px;
+    bottom: auto;
+    left: calc(var(--hnm-lane) / 2 - 8px);
+    width: 16px;
+    height: 16px;
+  }
+  tr.coll .hnm-gutter::before {
+    left: 0;
+    width: 100%;
+    border-radius: 50%;
+    background:
+      linear-gradient(var(--hnm-muted), var(--hnm-muted)) center / 8px 2px no-repeat,
+      linear-gradient(var(--hnm-muted), var(--hnm-muted)) center / 2px 8px no-repeat,
+      var(--hnm-rail);
+  }
+  tr.coll .hnm-gutter:hover::before {
+    background:
+      linear-gradient(var(--hnm-on-accent), var(--hnm-on-accent)) center / 8px 2px no-repeat,
+      linear-gradient(var(--hnm-on-accent), var(--hnm-on-accent)) center / 2px 8px no-repeat,
+      var(--hnm-accent);
+  }
+
+  tr.comtr.hnm-deep { display: none; }
+  button.hnm-more {
+    display: block;
+    margin: 4px 0 0 var(--hnm-step);
+    padding: 2px 0;
+    background: none;
+    color: var(--hnm-accent);
+    font: 600 var(--hnm-fs-meta)/1.4 var(--hnm-sans);
+  }
+  button.hnm-more:hover { filter: none; text-decoration: underline; }
 
   .comhead { font-size: 0; color: var(--hnm-muted); line-height: 22px; }
   .comhead > * { font-size: var(--hnm-fs-meta); margin-right: 6px; }
@@ -341,7 +374,7 @@
     overflow: auto;
     white-space: pre-wrap;
   }
-  pre, code { font-family: var(--hnm-mono); font-size: 13px; line-height: 1.5; }
+  pre, code { font-family: var(--hnm-mono); font-size: 14px; line-height: 1.5; }
 
   .reply { display: flex; align-items: center; gap: 10px; min-height: 24px; margin: 2px 0 0 -6px; }
   .reply p { margin: 0; }
@@ -407,6 +440,37 @@
     }
   }
 
+  const hideDeep = () => {
+    const target = document.getElementById(location.hash.slice(1))
+    let parent = null
+    let deep = []
+    const addMore = () => {
+      if (!parent || !deep.length || deep.includes(target)) return
+      const rows = deep
+      for (const row of rows) row.classList.add("hnm-deep")
+      const more = document.createElement("button")
+      more.type = "button"
+      more.className = "hnm-more"
+      more.textContent = `${rows.length} more ${rows.length === 1 ? "reply" : "replies"}`
+      more.addEventListener("click", () => {
+        for (const row of rows) row.classList.remove("hnm-deep")
+        more.remove()
+      })
+      parent.querySelector(".comment")?.append(more)
+    }
+    for (const row of document.querySelectorAll("tr.comtr")) {
+      const ind = indentOf(row)
+      if (ind >= REPLY_DEPTH) {
+        deep.push(row)
+        continue
+      }
+      addMore()
+      parent = ind === REPLY_DEPTH - 1 ? row : null
+      deep = []
+    }
+    addMore()
+  }
+
   const collapse = (row) => {
     row?.querySelector("a.togg")?.click()
     if (row && row.getBoundingClientRect().top < 0) row.scrollIntoView({ block: "start" })
@@ -426,6 +490,11 @@
     if (level < indentOf(row)) collapse(ancestorAt(row, level))
   })
 
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", decorate, { once: true })
-  else decorate()
+  const init = () => {
+    decorate()
+    hideDeep()
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init, { once: true })
+  else init()
 })()
