@@ -1,0 +1,79 @@
+<!doctype html>
+<html><head><script src="vk-init.js"></script></head><body>
+<div id="player" style="width:640px;transform:translateZ(0)"><div class="inner"><video id="a" src="clip.mp4" width="640" height="360" muted></video></div></div>
+<video id="b" src="clip.mp4" width="200" muted></video>
+<input id="text">
+<iframe id="f" src="frame-run.html" width="420" height="260"></iframe>
+<pre id="out"></pre>
+<script>
+const out = []
+const ok = (name, cond, extra = "") => console.log("VKT " + (cond ? "PASS " : "FAIL ") + name + " " + extra)
+const key = (key, opts = {}, target = document.body, win = window) =>
+  target.dispatchEvent(new win.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...opts }))
+const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+const popup = () => [...document.documentElement.children].find((e) => e.tagName === "DIV")
+onerror = (m) => console.log("VKT ERR " + m)
+onload = async () => { try {
+  localStorage.clear()
+  const a = document.getElementById("a"), b = document.getElementById("b")
+  await a.play(); await wait(200)
+  key("c"); ok("c +0.1", a.playbackRate === 1.1 && b.playbackRate === 1.1, a.playbackRate)
+  for (let i = 0; i < 40; i++) key("c")
+  ok("clamp max 4", a.playbackRate === 4, a.playbackRate)
+  for (let i = 0; i < 60; i++) key("x")
+  ok("clamp min 0.1", a.playbackRate === 0.1, a.playbackRate)
+  for (let i = 0; i < 14; i++) key("c")
+  ok("no float drift", a.playbackRate === 1.5, a.playbackRate)
+  const p = popup()
+  ok("popup text", p && p.textContent === "1.5x" && p.style.opacity === "1", p && p.textContent)
+  const r = a.getBoundingClientRect()
+  ok("popup at video top-left", parseFloat(p.style.left) === r.left + 16 && parseFloat(p.style.top) === r.top + 16)
+  key("z"); ok("z -> 1.0", a.playbackRate === 1 && p.textContent === "1.0x")
+  key("z"); ok("z -> back 1.5", a.playbackRate === 1.5)
+  ok("persisted", localStorage.getItem("gm_speed") === "1.5")
+  a.currentTime = 10; await wait(100)
+  key("."); ok("forward 5", Math.abs(a.currentTime - 15) < 0.3, a.currentTime)
+  key(","); ok("back 5", Math.abs(a.currentTime - 10) < 0.3, a.currentTime)
+  a.currentTime = 2; key(","); ok("back clamps 0", a.currentTime === 0)
+  a.currentTime = 10; await wait(100)
+  key(".", { altKey: true, code: "Period" }); ok("alt-. pauses while playing", a.paused)
+  const t0 = a.currentTime
+  key(".", { altKey: true, code: "Period" }); ok("alt-. steps 1/30", Math.abs(a.currentTime - t0 - 1 / 30) < 1e-5, a.currentTime - t0)
+  key(",", { altKey: true, code: "Comma" }); ok("alt-, steps back", Math.abs(a.currentTime - t0) < 1e-5, a.currentTime - t0)
+  const ctrlEv = new KeyboardEvent("keydown", { key: ".", ctrlKey: true, bubbles: true, cancelable: true })
+  document.body.dispatchEvent(ctrlEv)
+  ok("ctrl-. passes through", !ctrlEv.defaultPrevented && Math.abs(a.currentTime - t0) < 1e-5)
+  const ev = new KeyboardEvent("keydown", { key: "c", bubbles: true, cancelable: true })
+  document.getElementById("text").dispatchEvent(ev)
+  ok("ignored in input", !ev.defaultPrevented && a.playbackRate === 1.5)
+  // new video source picks up global speed once
+  b.playbackRate = 1; b.src = "clip.mp4?2"; await b.play(); await wait(100)
+  ok("new src gets global speed", b.playbackRate === 1.5, b.playbackRate)
+  b.playbackRate = 2; b.pause(); await b.play(); await wait(50)
+  ok("site change not overridden on resume", b.playbackRate === 2)
+  b.pause()
+  // maximize (last played = b now; play a again to target it)
+  await a.play(); await wait(50)
+  key("Escape")
+  const player = document.getElementById("player")
+  const pr = player.getBoundingClientRect()
+  ok("escape maximizes container", player.classList.contains("vk-player") && pr.width === innerWidth && pr.height === innerHeight, pr.width + "x" + pr.height)
+  ok("ancestor transform neutralized", getComputedStyle(player).transform === "none")
+  key("Escape"); ok("escape restores", !player.classList.contains("vk-player") && player.getBoundingClientRect().width === 640)
+  // iframe chain
+  const f = document.getElementById("f"), fw = f.contentWindow, iv = fw.document.getElementById("inner")
+  await iv.play(); await wait(50)
+  key("Escape", {}, fw.document.body, fw); await wait(100)
+  const fr = f.getBoundingClientRect()
+  ok("iframe maximized by parent", f.classList.contains("vk-player") && fr.width === innerWidth, fr.width)
+  ok("child container maximized", fw.document.querySelector(".vk-player") !== null)
+  key("Escape"); await wait(100)
+  ok("top escape restores both", !f.classList.contains("vk-player") && fw.document.querySelector(".vk-player") === null)
+  key("Escape", {}, fw.document.body, fw); await wait(100)
+  key("Escape", {}, fw.document.body, fw); await wait(100)
+  ok("child escape restores both", !f.classList.contains("vk-player") && fw.document.querySelector(".vk-player") === null)
+  await wait(1600)
+  ok("popup dismissed", popup().style.opacity === "0")
+  console.log("VKT DONE") } catch (e) { console.log("VKT ERR " + e.stack) }
+}
+</script></body></html>
