@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Keys
 // @namespace    video-keys
-// @version      1.0.0
+// @version      1.0.1
 // @description  Lightweight keyboard shortcuts for HTML5 video: speed, seek, frame step, maximize in window
 // @match        *://*/*
 // @run-at       document-start
@@ -9,6 +9,8 @@
 // @grant        GM_setValue
 // @grant        unsafeWindow
 // @inject-into  page
+// @downloadURL  https://github.com/joshuali925/vibe-scripts/raw/main/video-keys.user.js
+// @updateURL    https://github.com/joshuali925/vibe-scripts/raw/main/video-keys.user.js
 // ==/UserScript==
 
 ;(() => {

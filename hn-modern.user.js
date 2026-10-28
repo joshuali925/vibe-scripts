@@ -1,12 +1,14 @@
 // ==UserScript==
 // @name         HN Modern
 // @namespace    video-keys
-// @version      1.0.0
+// @version      1.0.1
 // @description  Readable, modern restyle of Hacker News story lists and discussions, light and dark
 // @match        https://news.ycombinator.com/*
 // @run-at       document-start
 // @grant        none
 // @inject-into  content
+// @downloadURL  https://github.com/joshuali925/vibe-scripts/raw/main/hn-modern.user.js
+// @updateURL    https://github.com/joshuali925/vibe-scripts/raw/main/hn-modern.user.js
 // ==/UserScript==
 
 ;(() => {
