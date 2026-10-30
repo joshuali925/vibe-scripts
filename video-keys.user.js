@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Keys
 // @namespace    video-keys
-// @version      1.0.1
+// @version      1.1.0
 // @description  Lightweight keyboard shortcuts for HTML5 video: speed, seek, frame step, maximize in window
 // @match        *://*/*
 // @run-at       document-start
@@ -83,7 +83,7 @@
     }
     const host = document.fullscreenElement || document.documentElement
     if (popup.parentNode !== host) host.appendChild(popup)
-    const r = video.getBoundingClientRect()
+    const r = video ? video.getBoundingClientRect() : { left: 0, top: 0 }
     const x = Math.min(Math.max(r.left, 0), window.innerWidth) + 16
     const y = Math.min(Math.max(r.top, 0), window.innerHeight) + 16
     popup.style.left = x + "px"
@@ -307,7 +307,7 @@ ${p} .vk-parent video, ${p} video.vk-player {object-fit:contain !important;}
     }
     if (!action) return
     const video = findVideo()
-    if (!video) return
+    if (!video && !"zxc".includes(key)) return
     e.preventDefault()
     e.stopImmediatePropagation()
     action(video)

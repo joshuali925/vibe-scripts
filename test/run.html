@@ -4,6 +4,7 @@
 <video id="b" src="clip.mp4" width="200" muted></video>
 <input id="text">
 <iframe id="f" src="frame-run.html" width="420" height="260"></iframe>
+<iframe id="e" src="empty-run.html" width="420" height="260"></iframe>
 <pre id="out"></pre>
 <script>
 const out = []
@@ -72,6 +73,16 @@ onload = async () => { try {
   key("Escape", {}, fw.document.body, fw); await wait(100)
   key("Escape", {}, fw.document.body, fw); await wait(100)
   ok("child escape restores both", !f.classList.contains("vk-player") && fw.document.querySelector(".vk-player") === null)
+  // no video: speed keys still update the setting
+  const ew = document.getElementById("e").contentWindow
+  key("x", {}, ew.document.body, ew)
+  const ep = [...ew.document.documentElement.children].find((e) => e.tagName === "DIV")
+  ok("no-video speed persisted", localStorage.getItem("gm_speed") === "1.4")
+  ok("no-video popup at page top-left", ep && ep.textContent === "1.4x" && ep.style.left === "16px" && ep.style.top === "16px")
+  b.src = "clip.mp4?3"; await b.play(); await wait(100)
+  ok("no-video speed applied to later video", b.playbackRate === 1.4, b.playbackRate)
+  b.pause()
+  ok("no-video ignores seek", !(() => { const ev = new ew.KeyboardEvent("keydown", { key: ".", bubbles: true, cancelable: true }); ew.document.body.dispatchEvent(ev); return ev.defaultPrevented })())
   await wait(1600)
   ok("popup dismissed", popup().style.opacity === "0")
   console.log("VKT DONE") } catch (e) { console.log("VKT ERR " + e.stack) }
