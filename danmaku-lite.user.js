@@ -389,11 +389,14 @@
     }
   }
 
-  const fetchText = (url) =>
+  const formatBytes = (n) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`)
+
+  const fetchText = (url, onProgress) =>
     new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
         url,
         timeout: 30000,
+        onprogress: (r) => onProgress(r.loaded, r.lengthComputable ? r.total : 0),
         onload: (r) => (r.status >= 200 && r.status < 300 ? resolve(r.responseText) : reject(`HTTP ${r.status}`)),
         onerror: () => reject("network error"),
         ontimeout: () => reject("timed out"),
@@ -413,13 +416,20 @@
 
   const loadUrl = async (url) => {
     pendingUrl = url
+    progress = { start: performance.now(), loaded: 0, total: 0 }
     panelError = ""
     renderPanel()
     const name = linkName(url)
     let list = null
     let error = ""
     try {
-      list = parseXml(await fetchText(url))
+      const text = await fetchText(url, (loaded, total) => {
+        if (pendingUrl !== url) return
+        progress.loaded = loaded
+        progress.total = total
+        if (isPanelOpen()) renderStatus()
+      })
+      list = parseXml(text)
       if (!list) error = `Couldn't find danmaku in ${name}`
     } catch (e) {
       error = `Couldn't load ${name}: ${e}`
@@ -512,6 +522,7 @@ footer button:hover{color:#fff;background:none;text-decoration:underline}
   let panel = null
   let panelError = ""
   let pendingUrl = ""
+  let progress = null
   let link = ""
 
   const h = (tag, attrs = {}, ...children) => {
@@ -642,19 +653,33 @@ footer button:hover{color:#fff;background:none;text-decoration:underline}
     })
   }
 
-  const renderPanel = () => {
-    if (!isPanelOpen()) return
+  const progressText = () => {
+    const { start, loaded, total } = progress
+    if (!loaded) return ""
+    const sec = (performance.now() - start) / 1000
+    const size = total >= loaded ? `${formatBytes(loaded)} of ${formatBytes(total)} (${Math.floor((loaded / total) * 100)}%)` : formatBytes(loaded)
+    return sec > 0 ? `${size} · ${formatBytes(Math.round(loaded / sec))}/s` : size
+  }
+
+  const renderStatus = () => {
     const { status } = panel
     status.classList.toggle("error", !!panelError)
     status.title = ""
-    if (pendingUrl) status.textContent = `Loading ${linkName(pendingUrl)}…`
-    else if (panelError) status.textContent = panelError
+    if (pendingUrl) {
+      status.textContent = ""
+      status.append(h("b", {}, `Loading ${linkName(pendingUrl)}…`), progressText())
+    } else if (panelError) status.textContent = panelError
     else if (!data) status.textContent = findVideo() ? "No file loaded" : "No video found on this page yet"
     else {
       status.textContent = ""
       status.append(h("b", {}, data.name), `${data.list.length.toLocaleString()} comments${video ? "" : " · waiting for video"}`)
       status.title = data.name
     }
+  }
+
+  const renderPanel = () => {
+    if (!isPanelOpen()) return
+    renderStatus()
     panel.show.checked = settings.show
     panel.clear.disabled = !data && !link && !pendingUrl
     panel.offset.textContent = `${offset > 0 ? "+" : ""}${offset.toFixed(1)}s`
