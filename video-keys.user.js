@@ -42,7 +42,6 @@
 
   const page = typeof unsafeWindow === "undefined" ? window : unsafeWindow
   const isTop = window === window.top
-  const appliedSrc = new WeakMap()
   let lastVideo = null
   let full = null
   let popup = null
@@ -54,8 +53,6 @@
     const v = e.target
     if (!(v instanceof HTMLVideoElement)) return
     lastVideo = v
-    if (appliedSrc.get(v) === v.currentSrc) return
-    appliedSrc.set(v, v.currentSrc)
     v.playbackRate = getSpeed()
   }
 
