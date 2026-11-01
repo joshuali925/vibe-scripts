@@ -2,8 +2,9 @@
 // @name         Danmaku Lite
 // @namespace    video-keys
 // @version      1.1.2
-// @description  Lightweight danmaku overlay for any HTML5 video from a Bilibili-style XML file or link
-// @match        *://*/*
+// @description  Lightweight danmaku overlay for YouTube and Drime videos from a Bilibili-style XML file or link
+// @match        *://*.youtube.com/*
+// @match        *://*.drime.cloud/*
 // @run-at       document-idle
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -27,13 +28,6 @@
   const BOTTOM = 2
   const MODES = { 1: SCROLL, 2: SCROLL, 3: SCROLL, 4: BOTTOM, 5: TOP }
 
-  const SITE_RULES = [
-    [/(^|\.)bilibili\.com$/, ".bpx-player-video-area"],
-    [/^www\.acfun\.cn$/, ".player-container .player"],
-    [/^www\.douyu\.com$/, "#js-player-video-case"],
-    [/^www\.huya\.com$/, "#videoContainer"],
-    [/^www\.twitch\.tv$/, ".player"],
-  ]
   const GENERAL_RULE = ".html5-video-player, .dplayer, .video-js, .jwplayer, [data-player]"
 
   const isTop = window === window.top
@@ -278,14 +272,6 @@
   }
 
   const findContainer = (v) => {
-    const hostname = location.hostname
-    for (const [re, sel] of SITE_RULES) {
-      if (re.test(hostname)) {
-        const el = v.closest(sel)
-        if (el) return el
-        break
-      }
-    }
     const el = v.closest(GENERAL_RULE)
     if (el) return el
     let player = v
@@ -391,20 +377,59 @@
 
   const formatBytes = (n) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`)
 
+  const inflate = async (bytes, format) =>
+    new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream(format))).arrayBuffer())
+
+  const unzip = (bytes) => {
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    const min = Math.max(0, bytes.length - 65557)
+    let eocd = bytes.length - 22
+    while (eocd >= min && view.getUint32(eocd, true) !== 0x06054b50) eocd--
+    if (eocd < min) throw "invalid zip"
+    const names = new TextDecoder()
+    let entry = null
+    let p = view.getUint32(eocd + 16, true)
+    for (let n = view.getUint16(eocd + 10, true); n > 0 && view.getUint32(p, true) === 0x02014b50; n--) {
+      const nameLen = view.getUint16(p + 28, true)
+      const name = names.decode(bytes.subarray(p + 46, p + 46 + nameLen))
+      const xml = /\.xml$/i.test(name)
+      if (xml || (!entry && !name.endsWith("/"))) {
+        entry = { method: view.getUint16(p + 10, true), size: view.getUint32(p + 20, true), offset: view.getUint32(p + 42, true) }
+        if (xml) break
+      }
+      p += 46 + nameLen + view.getUint16(p + 30, true) + view.getUint16(p + 32, true)
+    }
+    if (!entry) throw "empty zip"
+    const start = entry.offset + 30 + view.getUint16(entry.offset + 26, true) + view.getUint16(entry.offset + 28, true)
+    const data = bytes.subarray(start, start + entry.size)
+    if (entry.method === 0) return data
+    if (entry.method === 8) return inflate(data, "deflate-raw")
+    throw `unsupported zip method ${entry.method}`
+  }
+
+  const decodeBytes = async (bytes) => {
+    const [a, b] = bytes
+    if (a === 0x1f && b === 0x8b) bytes = await inflate(bytes, "gzip")
+    else if (a === 0x78 && ((a << 8) | b) % 31 === 0) bytes = await inflate(bytes, "deflate")
+    else if (a === 0x50 && b === 0x4b) bytes = await unzip(bytes)
+    return new TextDecoder().decode(bytes)
+  }
+
   const fetchText = (url, onProgress) =>
     new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
         url,
         timeout: 30000,
+        responseType: "arraybuffer",
         onprogress: (r) => onProgress(r.loaded, r.lengthComputable ? r.total : 0),
-        onload: (r) => (r.status >= 200 && r.status < 300 ? resolve(r.responseText) : reject(`HTTP ${r.status}`)),
+        onload: (r) => (r.status >= 200 && r.status < 300 ? resolve(decodeBytes(new Uint8Array(r.response))) : reject(`HTTP ${r.status}`)),
         onerror: () => reject("network error"),
         ontimeout: () => reject("timed out"),
       })
     })
 
   const loadFile = async (file) => {
-    const list = file && parseXml(await file.text())
+    const list = file && parseXml(await file.arrayBuffer().then((buf) => decodeBytes(new Uint8Array(buf))).catch(() => ""))
     panelError = list || !file ? "" : `Couldn't find danmaku in ${file.name}`
     if (list) {
       pendingUrl = ""
@@ -559,7 +584,7 @@ footer button:hover{color:#fff;background:none;text-decoration:underline}
         h(
           "label",
           { class: "drop" },
-          h("input", { type: "file", accept: ".xml,text/xml" }),
+          h("input", { type: "file", accept: ".xml,text/xml,.gz,.zip" }),
           h("span", { class: "pick" }, "Choose XML file"),
           h("span", { class: "hint" }, "or drop it here"),
         ),
