@@ -275,7 +275,7 @@ ${p} .vk-parent video, ${p} video.vk-player {object-fit:contain !important;}
     el && (el.isContentEditable || el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT")
 
   const onKey = (e) => {
-    if (e.ctrlKey || e.metaKey || e.shiftKey || e.isComposing || isEditable(e.target)) return
+    if (e.ctrlKey || e.metaKey || e.shiftKey || e.isComposing || isEditable(e.composedPath()[0])) return
     const key = e.key
     let action
     if (e.altKey) {

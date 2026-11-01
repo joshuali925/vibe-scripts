@@ -2,12 +2,14 @@
 // @name         Danmaku Lite
 // @namespace    video-keys
 // @version      1.1.2
-// @description  Lightweight danmaku overlay for any HTML5 video from an imported Bilibili-style XML file
+// @description  Lightweight danmaku overlay for any HTML5 video from a Bilibili-style XML file or link
 // @match        *://*/*
 // @run-at       document-idle
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
+// @grant        GM_xmlhttpRequest
+// @connect      *
 // @inject-into  content
 // @downloadURL  https://github.com/joshuali925/vibe-scripts/raw/main/danmaku-lite.user.js
 // @updateURL    https://github.com/joshuali925/vibe-scripts/raw/main/danmaku-lite.user.js
@@ -359,15 +361,75 @@
     }
   }
 
+  const setData = (name, list) => {
+    data = { name, list }
+    offset = 0
+    const v = findVideo()
+    if (v === video) reset()
+    else if (v) attach(v)
+  }
+
+  const pageKey = () => location.origin + location.pathname + location.search
+
+  const saveLink = (url) => {
+    if (url === link) return
+    const links = GM_getValue("links", {})
+    if (url) links[pageKey()] = url
+    else delete links[pageKey()]
+    GM_setValue("links", links)
+    link = url
+  }
+
+  const linkName = (url) => {
+    const last = new URL(url).pathname.split("/").pop()
+    try {
+      return decodeURIComponent(last) || url
+    } catch {
+      return last
+    }
+  }
+
+  const fetchText = (url) =>
+    new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        url,
+        timeout: 30000,
+        onload: (r) => (r.status >= 200 && r.status < 300 ? resolve(r.responseText) : reject(`HTTP ${r.status}`)),
+        onerror: () => reject("network error"),
+        ontimeout: () => reject("timed out"),
+      })
+    })
+
   const loadFile = async (file) => {
     const list = file && parseXml(await file.text())
     panelError = list || !file ? "" : `Couldn't find danmaku in ${file.name}`
     if (list) {
-      data = { name: file.name, list }
-      offset = 0
-      const v = findVideo()
-      if (v === video) reset()
-      else if (v) attach(v)
+      pendingUrl = ""
+      saveLink("")
+      setData(file.name, list)
+    }
+    renderPanel()
+  }
+
+  const loadUrl = async (url) => {
+    pendingUrl = url
+    panelError = ""
+    renderPanel()
+    const name = linkName(url)
+    let list = null
+    let error = ""
+    try {
+      list = parseXml(await fetchText(url))
+      if (!list) error = `Couldn't find danmaku in ${name}`
+    } catch (e) {
+      error = `Couldn't load ${name}: ${e}`
+    }
+    if (pendingUrl !== url) return
+    pendingUrl = ""
+    panelError = error
+    if (list) {
+      saveLink(url)
+      setData(name, list)
     }
     renderPanel()
   }
@@ -375,6 +437,10 @@
   const clearData = () => {
     data = null
     offset = 0
+    pendingUrl = ""
+    panelError = ""
+    saveLink("")
+    if (panel) panel.link.value = ""
     detach()
     renderPanel()
   }
@@ -405,6 +471,10 @@ button:focus-visible,.switch input:focus-visible+span,label.drop:focus-within{ou
 .drop:hover,.drop.over{border-color:#5aa9ff;background:#5aa9ff14}
 .pick{font-weight:600;color:#7cbcff}
 .hint{color:#8d8d99;font-size:12px}
+.link{display:flex;gap:6px;margin-top:8px}
+.link input{flex:1;min-width:0;font:inherit;color:inherit;padding:5px 8px;border:1px solid #ffffff26;border-radius:7px;background:#0000004d;outline:0;user-select:text}
+.link input:focus{border-color:#5aa9ff}
+.link input::placeholder{color:#8d8d99}
 .status{margin:10px 2px 0;min-height:19px;color:#a8a8b3}
 .status b{display:block;color:#e8e8ec;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .status.error{color:#ff8a80}
@@ -441,6 +511,8 @@ footer button:hover{color:#fff;background:none;text-decoration:underline}
   let panelHost = null
   let panel = null
   let panelError = ""
+  let pendingUrl = ""
+  let link = ""
 
   const h = (tag, attrs = {}, ...children) => {
     const el = document.createElement(tag)
@@ -480,6 +552,12 @@ footer button:hover{color:#fff;background:none;text-decoration:underline}
           h("span", { class: "pick" }, "Choose XML file"),
           h("span", { class: "hint" }, "or drop it here"),
         ),
+        h(
+          "form",
+          { class: "link" },
+          h("input", { type: "url", required: "", placeholder: "or paste a direct XML link", "aria-label": "XML link" }),
+          h("button", {}, "Load"),
+        ),
         h("div", { class: "status", "aria-live": "polite" }),
         h(
           "div",
@@ -508,6 +586,7 @@ footer button:hover{color:#fff;background:none;text-decoration:underline}
       show: $(".show"),
       clear: $(".clear"),
       offset: $(".value"),
+      link: $(".link input"),
       sliders,
     }
     const file = $("input[type=file]")
@@ -529,6 +608,10 @@ footer button:hover{color:#fff;background:none;text-decoration:underline}
       e.preventDefault()
       drop.classList.remove("over")
       loadFile(e.dataTransfer.files[0])
+    })
+    $(".link").addEventListener("submit", (e) => {
+      e.preventDefault()
+      loadUrl(panel.link.value.trim())
     })
     panel.show.addEventListener("change", () => {
       setSetting("show", panel.show.checked)
@@ -564,7 +647,8 @@ footer button:hover{color:#fff;background:none;text-decoration:underline}
     const { status } = panel
     status.classList.toggle("error", !!panelError)
     status.title = ""
-    if (panelError) status.textContent = panelError
+    if (pendingUrl) status.textContent = `Loading ${linkName(pendingUrl)}…`
+    else if (panelError) status.textContent = panelError
     else if (!data) status.textContent = findVideo() ? "No file loaded" : "No video found on this page yet"
     else {
       status.textContent = ""
@@ -572,7 +656,7 @@ footer button:hover{color:#fff;background:none;text-decoration:underline}
       status.title = data.name
     }
     panel.show.checked = settings.show
-    panel.clear.disabled = !data
+    panel.clear.disabled = !data && !link && !pendingUrl
     panel.offset.textContent = `${offset > 0 ? "+" : ""}${offset.toFixed(1)}s`
     for (const { key, format, input, output } of panel.sliders) {
       input.value = settings[key]
@@ -593,7 +677,10 @@ footer button:hover{color:#fff;background:none;text-decoration:underline}
       panelHost.style.position = "fixed"
       document.documentElement.appendChild(panelHost)
     }
-    renderPanel()
+    link = GM_getValue("links", {})[pageKey()] ?? ""
+    if (link && !panel.link.value) panel.link.value = link
+    if (link && !data && !pendingUrl) loadUrl(link)
+    else renderPanel()
     document.addEventListener("pointerdown", onOutsidePointer, true)
   }
 
