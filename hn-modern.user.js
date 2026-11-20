@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HN Modern
 // @namespace    video-keys
-// @version      1.1.1
+// @version      1.1.3
 // @description  Readable, modern restyle of Hacker News story lists and discussions, light and dark
 // @match        https://news.ycombinator.com/*
 // @run-at       document-start
@@ -262,6 +262,7 @@
   table.comment-tree tr.comtr > td > table { width: 100%; }
   tr.comtr td.votelinks { display: none; }
   tr.comtr td.ind {
+    position: relative;
     padding: 0;
     cursor: pointer;
     background: repeating-linear-gradient(to right,
@@ -285,7 +286,7 @@
     width: 12px;
     cursor: pointer;
   }
-  .hnm-gutter::before {
+  .hnm-gutter::before, .hnm-gutter::after {
     content: "";
     position: absolute;
     top: 0;
@@ -293,9 +294,26 @@
     left: 5px;
     width: 2px;
     background: var(--hnm-rail);
-    transition: background-color 120ms ease;
   }
-  .hnm-gutter:hover::before { background: var(--hnm-accent); }
+  .hnm-gutter::after, tr.comtr td.ind::before {
+    background: var(--hnm-accent);
+    opacity: 0;
+    transition: opacity 120ms ease;
+    pointer-events: none;
+  }
+  tr.comtr td.ind::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: calc(var(--hnm-hl-lv, 0) * var(--hnm-step) + var(--hnm-lane) / 2 - 1px);
+    width: 2px;
+  }
+  tr.comtr.hnm-hl:not(.coll) .hnm-gutter::after,
+  tr.comtr.hnm-hl-lane td.ind::before {
+    opacity: 1;
+  }
+  tr.coll .hnm-gutter::after { display: none; }
   tr.coll .hnm-gutter {
     top: 7px;
     bottom: auto;
@@ -476,19 +494,58 @@
     if (row.getBoundingClientRect().top < 0) row.scrollIntoView({ block: "start" })
   }
 
-  document.addEventListener("click", (e) => {
-    const gutter = e.target.closest?.(".hnm-gutter")
-    if (gutter) {
-      collapse(gutter.closest("tr.comtr"))
-      return
-    }
-    const ind = e.target.closest?.("tr.comtr td.ind")
-    if (!ind) return
+  const laneAt = (ind, x) => {
     const step = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--hnm-step"))
-    const level = Math.floor((e.clientX - ind.getBoundingClientRect().left) / step)
+    return Math.floor((x - ind.getBoundingClientRect().left) / step)
+  }
+
+  const targetRow = (e) => {
+    const gutter = e.target.closest?.(".hnm-gutter")
+    if (gutter) return gutter.closest("tr.comtr")
+    const ind = e.target.closest?.("tr.comtr td.ind")
+    if (!ind) return null
     const row = ind.closest("tr.comtr")
-    if (level < indentOf(row)) collapse(ancestorAt(row, level))
+    const level = laneAt(ind, e.clientX)
+    return level < indentOf(row) ? ancestorAt(row, level) : null
+  }
+
+  document.addEventListener("click", (e) => {
+    const row = targetRow(e)
+    if (row) collapse(row)
   })
+
+  let hlRow = null
+  let hlLanes = []
+  const highlight = (row) => {
+    if (row === hlRow) return
+    hlRow?.classList.remove("hnm-hl")
+    for (const r of hlLanes) r.classList.remove("hnm-hl-lane")
+    hlRow = row
+    hlLanes = []
+    if (!row) return
+    row.classList.add("hnm-hl")
+    const level = indentOf(row)
+    let r = row
+    while ((r = r.nextElementSibling) && indentOf(r) > level) {
+      r.style.setProperty("--hnm-hl-lv", level)
+      r.classList.add("hnm-hl-lane")
+      hlLanes.push(r)
+    }
+  }
+
+  let lastInd = null
+  let lastLevel = -1
+  document.addEventListener("mousemove", (e) => {
+    const ind = e.target.closest?.("tr.comtr td.ind")
+    if (ind) {
+      const level = laneAt(ind, e.clientX)
+      if (ind === lastInd && level === lastLevel) return
+      lastInd = ind
+      lastLevel = level
+    } else lastInd = null
+    highlight(targetRow(e))
+  }, { passive: true })
+  document.documentElement.addEventListener("mouseleave", () => highlight(null))
 
   const init = () => {
     decorate()
